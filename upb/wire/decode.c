@@ -911,7 +911,12 @@ static int _upb_Decoder_GetDelimitedOp(upb_Decoder* d, const upb_MiniTable* mt,
   int op = kDelimitedOps[ndx];
 
   if (op == kUpb_DecodeOp_SubMessage) {
-    _upb_Decoder_CheckUnlinked(d, mt, field, &op);
+    const upb_MiniTable* subl = upb_MiniTable_GetSubMessageTable(field);
+    if (subl && upb_MiniTable_FieldCount(subl) == 0) {
+      op = kUpb_DecodeOp_UnknownField;
+    } else {
+      _upb_Decoder_CheckUnlinked(d, mt, field, &op);
+    }
   } else if (op == kUpb_DecodeOp_Bytes) {
     _upb_Decoder_MaybeVerifyUtf8(d, field, &op);
   }
@@ -968,7 +973,12 @@ const char* _upb_Decoder_DecodeWireValue(upb_Decoder* d, const char* ptr,
       val->uint32_val = field->UPB_PRIVATE(number);
       if (field->UPB_PRIVATE(descriptortype) == kUpb_FieldType_Group) {
         *op = kUpb_DecodeOp_SubMessage;
-        _upb_Decoder_CheckUnlinked(d, mt, field, op);
+        const upb_MiniTable* subl = upb_MiniTable_GetSubMessageTable(field);
+        if (subl && upb_MiniTable_FieldCount(subl) == 0) {
+          *op = kUpb_DecodeOp_UnknownField;
+        } else {
+          _upb_Decoder_CheckUnlinked(d, mt, field, op);
+        }
       } else if (field->UPB_PRIVATE(descriptortype) ==
                  kUpb_FakeFieldType_MessageSetItem) {
         *op = kUpb_DecodeOp_MessageSetItem;

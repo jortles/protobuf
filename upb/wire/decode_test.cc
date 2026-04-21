@@ -402,6 +402,43 @@ TYPED_TEST(PackedTest, DecodeTruncatedPackedFieldShortLength) {
       << upb_DecodeStatus_String(result);
 }
 
+TEST(DecodeTest, EmptyMiniTableTreatedAsUnknown) {
+  Arena mt_arena;
+  Arena msg_arena;
+
+  auto [mt, field] =
+      test::MiniTable::MakeSingleFieldTable<test::field_types::Message>(
+          1, kUpb_DecodeFast_Scalar, mt_arena.ptr());
+
+  upb_MiniTable* empty_mt =
+      (upb_MiniTable*)upb_Arena_Malloc(mt_arena.ptr(), sizeof(upb_MiniTable));
+  memset(empty_mt, 0, sizeof(upb_MiniTable));
+  empty_mt->UPB_PRIVATE(size) = sizeof(upb_Message);
+  empty_mt->UPB_ONLYBITS(field_count) = 0;
+
+  const upb_MiniTable* subs[1] = {empty_mt};
+  bool linked =
+      upb_MiniTable_Link(const_cast<upb_MiniTable*>(mt), subs, 1, nullptr, 0);
+  ASSERT_TRUE(linked);
+
+  upb_Message* msg = upb_Message_New(mt, msg_arena.ptr());
+
+  std::string payload("\x0a\x02\x08\x05", 4);
+
+  upb_DecodeStatus result = upb_Decode(payload.data(), payload.size(), msg, mt,
+                                       nullptr, 0, msg_arena.ptr());
+
+  ASSERT_EQ(result, kUpb_DecodeStatus_Ok) << upb_DecodeStatus_String(result);
+
+  EXPECT_FALSE(upb_Message_HasBaseField(msg, field));
+  EXPECT_TRUE(upb_Message_HasUnknown(msg));
+
+  uintptr_t iter = kUpb_Message_UnknownBegin;
+  upb_StringView data;
+  ASSERT_TRUE(upb_Message_NextUnknown(msg, &data, &iter));
+  EXPECT_EQ(absl::string_view(data.data, data.size), payload);
+}
+
 }  // namespace
 
 }  // namespace test
