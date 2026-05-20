@@ -124,14 +124,23 @@ struct ReflectionSchema {
   // Offset of any field.
   template <typename Type = void>
   uint32_t GetFieldOffset(const FieldDescriptor* field) const {
+    ABSL_DCHECK_GE(field->index(), 0);
+    ABSL_DCHECK_LT(field->index(),
+                    field->containing_type()->field_count());
     return OffsetValue<Type>(offsets_[field->index()], field->type());
   }
 
   bool IsFieldInlined(const FieldDescriptor* field) const {
+    ABSL_DCHECK_GE(field->index(), 0);
+    ABSL_DCHECK_LT(field->index(),
+                    field->containing_type()->field_count());
     return Inlined(offsets_[field->index()], field->type());
   }
 
   bool IsFieldMicroString(const FieldDescriptor* field) const {
+    ABSL_DCHECK_GE(field->index(), 0);
+    ABSL_DCHECK_LT(field->index(),
+                    field->containing_type()->field_count());
     return IsMicroString(offsets_[field->index()], field->type());
   }
 
@@ -151,6 +160,9 @@ struct ReflectionSchema {
   // Bit index within the bit array of hasbits.  Bit order is low-to-high.
   uint32_t HasBitIndex(const FieldDescriptor* field) const {
     ABSL_DCHECK(!field->is_extension());
+    ABSL_DCHECK_GE(field->index(), 0);
+    ABSL_DCHECK_LT(field->index(),
+                    field->containing_type()->field_count());
     if (has_bits_offset_ == -1) return static_cast<uint32_t>(kNoHasbit);
     ABSL_DCHECK(HasHasbits());
     return has_bit_indices_[field->index()];
@@ -182,6 +194,9 @@ struct ReflectionSchema {
   // Returns a pointer to the default value for this field.  The size and type
   // of the underlying data depends on the field's type.
   const void* GetFieldDefault(const FieldDescriptor* field) const {
+    ABSL_DCHECK_GE(field->index(), 0);
+    ABSL_DCHECK_LT(field->index(),
+                    field->containing_type()->field_count());
     return reinterpret_cast<const uint8_t*>(default_instance_) +
            OffsetValue<void>(offsets_[field->index()], field->type());
   }
@@ -196,6 +211,9 @@ struct ReflectionSchema {
   bool IsSplit() const { return split_offset_ != -1; }
 
   bool IsSplit(const FieldDescriptor* field) const {
+    ABSL_DCHECK_GE(field->index(), 0);
+    ABSL_DCHECK_LT(field->index(),
+                    field->containing_type()->field_count());
     return split_offset_ != -1 &&
            (offsets_[field->index()] & kSplitFieldOffsetMask) != 0;
   }
