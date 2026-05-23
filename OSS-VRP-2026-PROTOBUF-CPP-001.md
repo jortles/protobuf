@@ -120,7 +120,22 @@ CC=clang CXX=clang++ bazelisk build \
 
 ### Suggested Fix
 
-The factory should either prevent destruction while messages exist (reference counting on TypeInfo) or copy the required ClassData into each DynamicMessage instance so it doesn't depend on the factory's lifetime.
+**Reference count `TypeInfo`** — add an atomic reference count to `TypeInfo`. Each `DynamicMessage` increments on construction and decrements on destruction. `~DynamicMessageFactory` releases the factory's own reference instead of unconditionally deleting. `TypeInfo` is freed when the last reference (factory or message) is released.
+
+This is the correct fix because:
+
+- `DynamicMessage` already stores `type_info_` as a raw pointer and accesses it from 26 call sites. Reference counting requires no changes to those access sites — only construction, destruction, and factory teardown.
+- The existing scribble in `~TypeInfo` (line 470, commented "This is a common bug") acknowledges this is a known problem. The scribble is a detection aid, not a fix, and it doesn't cover the function pointers that enable code execution.
+- `std::shared_ptr` would work but adds 16 bytes per message. An intrusive `std::atomic<int>` refcount in `TypeInfo` adds only 4 bytes to the shared struct and avoids per-message overhead.
+- Arena-allocated `DynamicMessage` instances complicate this slightly — the destructor may not run on Arena cleanup, so the Arena destructor hook must also release the reference.
+
+Other approaches considered and rejected:
+
+| Approach | Why rejected |
+|----------|--------------|
+| Copy ClassData into each message | +200-300 bytes/message; doesn't solve prototype lifetime; Reflection ownership unclear |
+| Prevent factory destruction (FATAL) | Breaks existing code; doesn't fix the underlying ownership model |
+| Extend scribble to zero function pointers | Mitigation only — still UAF, still crashes, just prevents controlled RIP |
 
 ---
 
@@ -160,7 +175,22 @@ bazelisk build src/google/protobuf/fuzz:poc_placeholder_nullptr
 
 ### Suggested Fix
 
-Initialize `options_` to `&ExtensionRangeOptions::default_instance()` for placeholder extension ranges, or add a null check in `ExtensionRange::options()`.
+**Initialize `options_` to `&ExtensionRangeOptions::default_instance()`** at the placeholder creation site (`descriptor.cc:5796`). This is a one-line change:
+
+```cpp
+// Before (vulnerable):
+placeholder_message->extension_ranges_[0].options_ = nullptr;
+
+// After (fixed):
+placeholder_message->extension_ranges_[0].options_ = &ExtensionRangeOptions::default_instance();
+```
+
+This is the correct fix because:
+
+- Every other options field in placeholder descriptors already uses `default_instance()`. Line 5782 in the same function sets `placeholder_message->options_ = &MessageOptions::default_instance()`. The nullptr for extension range options is an oversight that breaks the pattern.
+- `ExtensionRange::CopyTo()` (line 3068) already assumes `options_` is never null — it compares `options_ != &ExtensionRangeOptions::default_instance()` to decide whether to serialize options. A null `options_` would cause this comparison to dereference null.
+- Adding a null check in `ExtensionRange::options()` instead would mask the bug and require null checks at every call site. The `options()` accessor returns a reference (`const ExtensionRangeOptions&`), so it cannot represent "no options" — the default instance is the correct sentinel.
+- Defensive null checks already exist at lines 8979 and 9340 in descriptor.cc, guarding against this exact nullptr. These would become dead code after the fix (which confirms the approach is correct).
 
 ---
 
@@ -182,7 +212,7 @@ Initialize `options_` to `&ExtensionRangeOptions::default_instance()` for placeh
 
 ### Fix Included
 
-The second commit in the PR adds:
+The second commit in the PR adds two changes (defense in depth):
 
 1. **Root cause fix** in `descriptor.cc:CrossLinkMessage` — reject `map_entry` messages with != 2 fields unconditionally:
 ```cpp
@@ -196,6 +226,10 @@ if (message->options().map_entry() && message->field_count() != 2) {
 ```cpp
 if (descriptor->options().map_entry() && descriptor->field_count() >= 2) {
 ```
+
+**Why CrossLinkMessage is the correct location:** `CrossLinkMessage` runs unconditionally for all messages during `BuildFileImpl()` → `CrossLinkFile()`, before `ValidateOptions` or `OptionInterpreter`. The existing `ValidateMapEntry` (line 9388) only runs from `ValidateField` (line 8924), which is per-field — if no parent field references the orphaned `map_entry` message, validation is skipped entirely.
+
+**Other potentially vulnerable sites:** `reflection_ops.cc` lines 197, 280, 321 access `field(1)` on map_entry descriptors without bounds checks. These are protected indirectly by the CrossLinkMessage validation (malformed descriptors are rejected before reaching runtime), but could benefit from additional defense-in-depth guards.
 
 ### Reproduce
 
