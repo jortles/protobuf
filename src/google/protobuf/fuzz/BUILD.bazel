@@ -1,0 +1,53 @@
+load("//build_defs:cpp_opts.bzl", "COPTS", "LINK_OPTS")
+
+package(default_visibility = ["//src/google/protobuf:__subpackages__"])
+
+# PoC: CWE-476 — Placeholder ExtensionRange nullptr dereference
+cc_binary(
+    name = "poc_placeholder_nullptr",
+    srcs = ["poc_placeholder_nullptr.cc"],
+    copts = COPTS,
+    deps = [
+        "//src/google/protobuf:protobuf",
+    ],
+)
+
+# PoC: CWE-416 — DynamicMessageFactory use-after-free (basic)
+cc_binary(
+    name = "poc_dynamic_factory_uaf",
+    srcs = ["poc_dynamic_factory_uaf.cc"],
+    copts = COPTS,
+    deps = [
+        "//src/google/protobuf:protobuf",
+    ],
+)
+
+# PoC: CWE-416 — DynamicMessageFactory UAF (6 independent access paths)
+cc_binary(
+    name = "poc_dynamic_factory_uaf_v2",
+    srcs = ["poc_dynamic_factory_uaf_v2.cc"],
+    copts = COPTS,
+    deps = [
+        "//src/google/protobuf:protobuf",
+    ],
+)
+
+# PoC: CWE-416 — DynamicMessageFactory UAF → heap reclaim → controlled code execution
+cc_binary(
+    name = "poc_dynamic_factory_uaf_v3",
+    srcs = ["poc_dynamic_factory_uaf_v3.cc"],
+    copts = COPTS,
+    deps = [
+        "//src/google/protobuf:protobuf",
+    ],
+)
+
+# Helper: TypeInfo layout probe (used to develop the v3 PoC)
+cc_binary(
+    name = "poc_typeinfo_offsets",
+    srcs = ["poc_typeinfo_offsets.cc"],
+    copts = COPTS,
+    deps = [
+        "//src/google/protobuf:protobuf",
+    ],
+)
